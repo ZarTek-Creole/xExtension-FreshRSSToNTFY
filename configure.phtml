@@ -2,21 +2,21 @@
 	declare(strict_types=1);
 	/** @var FreshrssToNTFYExtension $this */
 ?>
-<h2><?= _t('ext.ntfy.configtitle');?></h2>
+<h2><?= _t('ext.ntfy_html.title');?></h2>
 
 <form action="<?= _url('extension', 'configure', 'e', urlencode($this->getName()));?>" method="post">
     <input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken();?>" />
 
     <!-- Field for NTFY server base URL -->
     <div class="form-group">
-        <label for="ntfy_url"><?= _t('ext.ntfy.url');?></label>
-        <input type="url" id="ntfy_url" name="ntfy_url" value="<?= $this->getNtfyUrl();?>" required>
+        <label for="ntfy_url"><?= _t('ext.ntfy_html.url');?></label>
+        <input type="url" id="ntfy_url" name="ntfy_url" value="<?= htmlspecialchars($this->getNtfyUrl());?>" required>
     </div>
 
     <!-- Field for NTFY topic -->
     <div class="form-group">
-        <label for="ntfy_topic"><?= _t('ext.ntfy.topic');?></label>
-        <input type="text" id="ntfy_topic" name="ntfy_topic" value="<?= $this->getNtfyTopic();?>" required>
+        <label for="ntfy_topic"><?= _t('ext.ntfy_html.topic');?></label>
+        <input type="text" id="ntfy_topic" name="ntfy_topic" value="<?= htmlspecialchars($this->getNtfyTopic());?>" required>
     </div>
 
     <div class="form-group form-actions">

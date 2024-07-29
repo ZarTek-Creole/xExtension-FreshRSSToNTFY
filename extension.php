@@ -1,7 +1,10 @@
 <?php
+
 declare(strict_types=1);
 
-// Classe d'assistance pour accéder aux propriétés privées
+/**
+ * Classe d'assistance pour accéder aux propriétés privées
+ */
 class FreshRSS_Helper
 {
     /**
@@ -11,7 +14,7 @@ class FreshRSS_Helper
      * @param string $propertyName Le nom de la propriété à extraire
      * @return mixed La valeur de la propriété demandée
      */
-    public static function getProperty($object, $propertyName)
+    public static function getProperty(object $object, string $propertyName)
     {
         $reflectionClass = new ReflectionClass($object);
         $property = $reflectionClass->getProperty($propertyName);
@@ -20,106 +23,102 @@ class FreshRSS_Helper
     }
 }
 
-// Classe principale pour l'extension FreshRSS vers NTFY
+/**
+ * Classe principale pour l'extension FreshRSS vers NTFY
+ */
 final class FreshRSSToNTFYExtension extends Minz_Extension
 {
-    private const DEFAULT_NTFY_URL = 'https://notify.targate.xyz/redmine'; // URL par défaut pour NTFY
-    private const DEFAULT_NTFY_TOPIC = 'RSS'; // Sujet par défaut pour NTFY
+    /** @var string URL par défaut pour NTFY */
+    private const DEFAULT_NTFY_URL = 'https://notify.targate.xyz/';
 
-    private string $ntfy_url;   // URL NTFY personnalisée
-    private string $ntfy_topic; // Sujet NTFY personnalisé
+    /** @var string Sujet par défaut pour NTFY */
+    private const DEFAULT_NTFY_TOPIC = 'redmine';
 
     /**
      * Méthode d'initialisation de l'extension
+     *
+     * @throws FreshRSS_Context_Exception Si la configuration système n'est pas initialisée
      */
     #[\Override]
     public function init(): void
     {
-        parent::init();  // Appel de l'initialisation de la classe parente
+        parent::init();
 
-        $this->registerTranslates();  // Enregistre les traductions nécessaires
+        $this->registerTranslates();
 
-        // Vérification que la configuration utilisateur est disponible
         if (!FreshRSS_Context::hasUserConf()) {
-            throw new FreshRSS_Context_Exception('System configuration not initialised!');
+            throw new FreshRSS_Context_Exception('User configuration not initialised!');
         }
 
-        // Chargement des configurations utilisateurs
-        $this->loadConfigValues();
-
+        $this->initializeUserConfiguration();
         // Enregistrement du hook pour capturer les nouveaux articles
         $this->registerHook('entry_before_insert', [$this, 'notifyNewEntry']);
-        
-        // Chargement des configurations utilisateurs et application des valeurs par défaut si nécessaire
+    }
+
+
+    /**
+     * Initialise la configuration utilisateur avec des valeurs par défaut si nécessaire
+     */
+    private function initializeUserConfiguration(): void
+    {
         $userConf = FreshRSS_Context::userConf();
-        $save = false; // Variable pour suivre si une sauvegarde de la configuration est nécessaire
+        $save = false;
 
         // Vérifie si l'URL NTFY est définie, sinon utilise la valeur par défaut
-        if (is_null($userConf->attributeString('ntfy_url'))) {
+        if ($this->isEmpty($userConf->attributeString('ntfy_url'))) {
             $userConf->attributeString('ntfy_url', self::DEFAULT_NTFY_URL);
             $save = true;
         }
 
         // Vérifie si le sujet NTFY est défini, sinon utilise la valeur par défaut
-        if (is_null($userConf->attributeString('ntfy_topic'))) {
+        if ($this->isEmpty($userConf->attributeString('ntfy_topic'))) {
             $userConf->attributeString('ntfy_topic', self::DEFAULT_NTFY_TOPIC);
             $save = true;
         }
 
-        // Si des changements ont été effectués, sauvegarde les configurations
         if ($save) {
             $userConf->save();
         }
     }
 
     /**
-     * Cette fonction est appelée par FreshRSS lorsque la page de configuration est chargée
-     * et lors de l'enregistrement de la configuration.
-     *  - Enregistre la configuration en cas de POST.
-     *  - (Re)charge la configuration dans tous les cas, pour synchroniser après un enregistrement et avant un chargement de page.
+     * Vérifie si une chaîne est vide ou null
+     *
+     * @param ?string $value La valeur à vérifier
+     * @return bool Vrai si la chaîne est vide ou null, sinon faux
+     */
+    private function isEmpty(?string $value): bool
+    {
+        return $value === null || trim($value) === '';
+    }
+
+    /**
+     * Méthode appelée pour gérer l'action de configuration
      */
     #[\Override]
     public function handleConfigureAction(): void
     {
-        $this->registerTranslates();  // Enregistrement des traductions
+        $this->registerTranslates();
 
-        // Vérifie si la requête est un POST, ce qui signifie que l'utilisateur soumet des paramètres
         if (Minz_Request::isPost()) {
-            $userConf = FreshRSS_Context::userConf();
-
-            // Sauvegarde des configurations utilisateur avec les nouvelles valeurs ou les valeurs par défaut
-            $userConf->attributeString('ntfy_url', Minz_Request::paramString('ntfy_url', true) ?: self::DEFAULT_NTFY_URL);
-            $userConf->attributeString('ntfy_topic', Minz_Request::paramString('ntfy_topic', true) ?: self::DEFAULT_NTFY_TOPIC);
-
-            $userConf->save();  // Sauvegarde les nouvelles configurations
+            $this->saveConfigurationFromRequest();
         }
-        
-        // Charge les valeurs de configuration
-        $this->loadConfigValues();
     }
 
     /**
-     * Initialise la configuration de l'extension si le contexte utilisateur est disponible.
-     * Ne pas appeler cette méthode dans init(), elle ne peut pas être utilisée à cet endroit.
+     * Sauvegarde la configuration à partir de la requête HTTP POST
      */
-    public function loadConfigValues(): void
+    private function saveConfigurationFromRequest(): void
     {
-        // Vérifie si le contexte utilisateur est disponible
-        if (!class_exists('FreshRSS_Context', false) || !FreshRSS_Context::hasUserConf()) {
-            return;
-        }
+        $userConf = FreshRSS_Context::userConf();
 
-        // Chargement des valeurs de configuration pour l'URL NTFY
-        $ntfy_url = FreshRSS_Context::userConf()->attributeString('ntfy_url');
-        if ($ntfy_url !== null) {
-            $this->ntfy_url = $ntfy_url;
-        }
+        $ntfy_url = Minz_Request::paramString('ntfy_url', true) ?: self::DEFAULT_NTFY_URL;
+        $ntfy_topic = Minz_Request::paramString('ntfy_topic', true) ?: self::DEFAULT_NTFY_TOPIC;
 
-        // Chargement des valeurs de configuration pour le sujet NTFY
-        $ntfy_topic = FreshRSS_Context::userConf()->attributeString('ntfy_topic');
-        if ($ntfy_topic !== null) {
-            $this->ntfy_topic = $ntfy_topic;
-        }
+        $userConf->attributeString('ntfy_url', $ntfy_url);
+        $userConf->attributeString('ntfy_topic', $ntfy_topic);
+
+        $userConf->save();
     }
 
     /**
@@ -129,7 +128,10 @@ final class FreshRSSToNTFYExtension extends Minz_Extension
      */
     public function getNtfyUrl(): string
     {
-        return $this->ntfy_url;
+        if (!class_exists('FreshRSS_Context', false) || !FreshRSS_Context::hasUserConf()) {
+            return self::DEFAULT_NTFY_URL;
+        }
+        return FreshRSS_Context::userConf()->attributeString('ntfy_url') ?? self::DEFAULT_NTFY_URL;
     }
 
     /**
@@ -139,7 +141,10 @@ final class FreshRSSToNTFYExtension extends Minz_Extension
      */
     public function getNtfyTopic(): string
     {
-        return $this->ntfy_topic;
+        if (!class_exists('FreshRSS_Context', false) || !FreshRSS_Context::hasUserConf()) {
+            return self::DEFAULT_NTFY_TOPIC;
+        }
+        return FreshRSS_Context::userConf()->attributeString('ntfy_topic') ?? self::DEFAULT_NTFY_TOPIC;
     }
 
     /**
@@ -151,70 +156,116 @@ final class FreshRSSToNTFYExtension extends Minz_Extension
      */
     public function notifyNewEntry(FreshRSS_Entry $entry): FreshRSS_Entry
     {
-        // Récupère les valeurs à partir de l'entrée
-        $title = FreshRSS_Helper::getProperty($entry, 'title');
-        $url = FreshRSS_Helper::getProperty($entry, 'link');
-        $description = strip_tags(FreshRSS_Helper::getProperty($entry, 'content'))?? _t('ext.ntfy.nocontent');
-        $pubDate = FreshRSS_Helper::getProperty($entry, 'date')?? _t('ext.ntfy.nodate');
-        $tags = implode(', ', FreshRSS_Helper::getProperty($entry, 'tags'));
-        $enclosures = FreshRSS_Helper::getProperty($entry, 'attributes')['enclosures']?? [];
-        $enclosureUrl = !empty($enclosures)? $enclosures[0]['url'] : null;
+        $message = $this->createNotificationMessage($entry);
+        $headers = $this->createNotificationHeaders($entry);
 
-        // Définit les en-têtes de la requête HTTP
-        $headers = [];
-            // 'Content-Type: text/plain',
-            // 'Click: https://home.nest.com/',
-            // 'Attach: ' . $enclosureUrl,
-            // 'Actions: http, Open door, https://api.nest.com/open/yAxkasd, clear=true',
-            // 'Email: phil@example.com'
-        // ];
+        $this->sendNotification($message, $headers);
 
-        // Prépare le message pour NTFY avec les détails de l'article
-        $message = sprintf(
-            "Titre : %s\nURL : %s\nDescription : %s\nDate de publication : %s\nTags : %s\nEnclosure URL : %s\n",
-            $title,
-            $url,
-            $description,
-            date('c', $pubDate), // Format de la date ISO 8601
-            $tags,
-            $enclosureUrl
-        );
-
-        // Envoie la notification à l'URL NTFY
-        $this->sendNotification($message);
-
-        // Retourne l'entrée inchangée
         return $entry;
     }
 
     /**
-     * Envoie une notification au service NTFY
+     * Crée le message de notification pour une entrée donnée
      *
-     * @param string $message Le message à envoyer dans la notification
+     * @param FreshRSS_Entry $entry L'entrée pour laquelle le message est créé
+     * @return string Le message formaté pour la notification
      */
-    private function sendNotification(string $message, string $headers): void
+    private function createNotificationMessage(FreshRSS_Entry $entry): string
     {
-        $topic = $this->getNtfyTopic();  // Obtient le sujet NTFY via la méthode d'instance
-        $url = $this->getNtfyUrl();  // Formate l'URL NTFY complète
+        $description = strip_tags(FreshRSS_Helper::getProperty($entry, 'content')) ?? _t('ext.ntfy_code.no_content');
+        $pubDate = FreshRSS_Helper::getProperty($entry, 'date') ?? _t('ext.ntfy_code.no_date');
+        return sprintf(
+            "Description : %s\nDate de publication : %s\n",
+            $description,
+            date('c', $pubDate), // Format de la date en date FR 30-07-2024 à 00h47
+        );
+    }
 
+    /**
+     * Crée les en-têtes de notification pour une entrée donnée
+     *
+     * @param FreshRSS_Entry $entry L'entrée pour laquelle les en-têtes sont créés
+     * @return array Les en-têtes formatés pour la notification
+     */
+    private function createNotificationHeaders(FreshRSS_Entry $entry): array
+    {
+        $enclosureUrl = $this->getEnclosureUrl($entry);
+        headers == array();
+        // headers['Content-Type'] == 'text/plain';
+        headers['Content-Type'] == 'text/markdown';
+        if (! $this->isEmpty(FreshRSS_Helper::getProperty($entry, 'link'))) {
+            headers['X-Click'] == FreshRSS_Helper::getProperty($entry, 'link');
+        }
+        if (! $this->isEmpty(FreshRSS_Helper::getProperty($entry, 'Title'))) {
+            headers['X-Title'] == FreshRSS_Helper::getProperty($entry, 'Title');
+        }
+        if (! $this->isEmpty(FreshRSS_Helper::getProperty($entry, 'Tags'))) {
+            headers['X-Tags'] == FreshRSS_Helper::getProperty($entry, 'Tags');
+        }
+        if (! $this->isEmpty($enclosureUrl)) {
+            headers['X-Attach'] == $enclosureUrl;
+        }
+        return $headers;
+    }
 
+    /**
+     * Récupère l'URL de l'enclosure pour une entrée donnée
+     *
+     * @param FreshRSS_Entry $entry L'entrée pour laquelle l'URL est récupérée
+     * @return ?string L'URL de l'enclosure, ou null si non disponible
+     */
+    private function getEnclosureUrl(FreshRSS_Entry $entry): ?string
+    {
+        $enclosures = FreshRSS_Helper::getProperty($entry, 'attributes')['enclosures'] ?? null;
+        return !empty($enclosures) ? $enclosures[0]['url'] : null;
+    }
 
-        $ch = curl_init($url);  // Initialise une session cURL
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");  // Définit la requête comme un POST
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $message);  // Définit le corps de la requête avec le message
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Retourne le transfert en tant que chaîne de caractères
-        // curl_setopt($ch, CURLOPT_HTTPHEADER, $headers); // Optionnel : ajoute les en-têtes HTTP
+    /**
+     * Envoie une notification à NTFY avec les données fournies
+     *
+     * @param string $message Le message à envoyer
+     * @param array $headers Les en-têtes HTTP à inclure dans la requête
+     */
+    private function sendNotification(string $message, array $headers): void
+    {
+        $url = rtrim($this->getNtfyUrl(), '/') . '/' . $this->getNtfyTopic();
 
-        $response = curl_exec($ch);  // Exécute la requête cURL
+        $options = [
+            'http' => [
+                'method' => 'POST',
+                'header' => implode("\r\n", $headers),
+                'content' => $message,
+            ],
+        ];
 
-        // Vérifie si une erreur cURL est survenue
-        if (curl_errno($ch)) {
-            Minz_Log::warning('Erreur CURL: ' . $url . '\n' . curl_error($ch));  // Log l'erreur cURL
-        } else {
-            // Optionnel : log de la réponse pour débogage
-            Minz_Log::warning('Réponse NTFY: ' . $url . '\n' . $response);  // Log la réponse de NTFY
+        $context = stream_context_create($options);
+
+        // Gestion des erreurs lors de l'envoi de la notification
+        try {
+            $response = @file_get_contents($url, false, $context);
+
+            if ($response === false) {
+                $this->handleError($http_response_header ?? [], $message);
+            }
+        } catch (Exception $e) {
+            Minz_Log::error('Failed to send notification to NTFY: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Gère les erreurs lors de l'envoi de la notification
+     *
+     * @param array $responseHeaders Les en-têtes de réponse HTTP
+     * @param string $message Le message de notification
+     */
+    private function handleError(array $responseHeaders, string $message): void
+    {
+        $statusCode = 0;
+        if (!empty($responseHeaders[0])) {
+            preg_match('/HTTP\/\d\.\d\s+(\d+)/', $responseHeaders[0], $matches);
+            $statusCode = isset($matches[1]) ? (int)$matches[1] : 0;
         }
 
-        curl_close($ch);  // Ferme la session cURL
+        Minz_Log::error(sprintf('Notification failed with status %d: %s', $statusCode, $message));
     }
 }
