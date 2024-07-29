@@ -1,0 +1,9 @@
+{
+    "name": "FreshRSSToNTFY",
+    "author": "ZarTek-Creole <votre.email@example.com>",
+    "description": "Envoie des notifications vers NTFY pour chaque nouvel article ajouté.",
+    "version": "1.0.0",
+    "entrypoint": "FreshRSSToNTFY",
+    "type": "user"
+  }
+  
